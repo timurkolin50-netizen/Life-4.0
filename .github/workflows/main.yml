@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Получить проект
+      - name: Получить репозиторий
         uses: actions/checkout@v4
 
       - name: Установить Java 17
@@ -23,15 +23,64 @@ jobs:
       - name: Установить Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Проверить структуру проекта
+      - name: Подготовить LIFE
+        shell: bash
         run: |
-          echo "Проверяем widget XML:"
-          test -f app/src/main/res/xml/life_widget_info.xml
-          echo "life_widget_info.xml найден"
+          set -e
 
-          echo "Проверяем AndroidManifest:"
+          echo "Содержимое репозитория:"
+          find . -maxdepth 3 -type f | sort | head -200
+
+          # Если Android-проект уже находится в корне
+          if [ -f "settings.gradle.kts" ] && [ -d "app" ]; then
+            echo "Проект найден в корне."
+            exit 0
+          fi
+
+          # Если проект находится внутри папки life_final
+          if [ -f "life_final/settings.gradle.kts" ]; then
+            echo "Найден life_final — переносим проект в корень."
+            cp -a life_final/. .
+            exit 0
+          fi
+
+          # Ищем ZIP с проектом
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -1)
+
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Найден ZIP: $ZIP_FILE"
+
+            mkdir -p /tmp/life_unzip
+            unzip -q "$ZIP_FILE" -d /tmp/life_unzip
+
+            PROJECT_DIR=$(find /tmp/life_unzip -name settings.gradle.kts -type f -printf '%h\n' | head -1)
+
+            if [ -z "$PROJECT_DIR" ]; then
+              echo "ОШИБКА: Android-проект внутри ZIP не найден."
+              exit 1
+            fi
+
+            echo "Проект найден: $PROJECT_DIR"
+            cp -a "$PROJECT_DIR"/. .
+          else
+            echo "ОШИБКА: Android-проект не найден."
+            echo "Нужны settings.gradle.kts и папка app."
+            exit 1
+          fi
+
+      - name: Проверить проект
+        shell: bash
+        run: |
+          set -e
+
+          echo "Проверяем:"
+          test -f settings.gradle.kts
+          test -d app
           test -f app/src/main/AndroidManifest.xml
-          echo "AndroidManifest.xml найден"
+          test -f app/src/main/res/xml/life_widget_info.xml
+          test -f app/src/main/res/layout/life_widget.xml
+
+          echo "Все необходимые файлы найдены."
 
       - name: Собрать LIFE APK
         run: gradle :app:assembleDebug --stacktrace
