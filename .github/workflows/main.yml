@@ -1,0 +1,48 @@
+name: Build LIFE APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить проект
+        uses: actions/checkout@v4
+
+      - name: Установить Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Установить Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Проверить структуру проекта
+        run: |
+          echo "Проверяем widget XML:"
+          test -f app/src/main/res/xml/life_widget_info.xml
+          echo "life_widget_info.xml найден"
+
+          echo "Проверяем AndroidManifest:"
+          test -f app/src/main/AndroidManifest.xml
+          echo "AndroidManifest.xml найден"
+
+      - name: Собрать LIFE APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Проверить APK
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Загрузить APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LIFE-3.0.1-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
