@@ -1,0 +1,114 @@
+name: Build LIFE APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build LIFE APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Find LIFE ZIP
+        id: find_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' -print -quit)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: LIFE ZIP was not found."
+            echo "Upload the LIFE project ZIP to the root of the repository."
+            exit 1
+          fi
+
+          echo "ZIP found: $ZIP_FILE"
+          echo "zip=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Extract LIFE project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf "$GITHUB_WORKSPACE/life-build"
+          mkdir -p "$GITHUB_WORKSPACE/life-build"
+
+          unzip -q "${{ steps.find_zip.outputs.zip }}" -d "$GITHUB_WORKSPACE/life-build"
+
+          PROJECT_DIR="$(find "$GITHUB_WORKSPACE/life-build" -type f -name 'settings.gradle.kts' -printf '%h\n' -quit)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            PROJECT_DIR="$(find "$GITHUB_WORKSPACE/life-build" -type f -name 'settings.gradle' -printf '%h\n' -quit)"
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: No Gradle Android project found in the ZIP."
+            echo "The ZIP must contain settings.gradle.kts or settings.gradle."
+            exit 1
+          fi
+
+          echo "Project directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$PROJECT_DIR/app"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_DIR/gradlew"
+
+          echo "Android project structure is OK."
+
+          if [ -f "$PROJECT_DIR/app/src/main/res/xml/life_widget_info.xml" ]; then
+            echo "Widget XML found."
+          else
+            echo "WARNING: life_widget_info.xml not found."
+          fi
+
+      - name: Make Gradle executable
+        run: chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build LIFE APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew clean :app:assembleDebug --stacktrace
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo "APK successfully created:"
+          ls -lh "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LIFE-3.0.2-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
